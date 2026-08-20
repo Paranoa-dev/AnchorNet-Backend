@@ -1,4 +1,4 @@
-import { loadConfig } from "./config";
+import { loadConfig, validateConfig, ConfigValidationError } from "./config";
 
 describe("loadConfig", () => {
   it("applies defaults when env is empty", () => {
@@ -51,6 +51,46 @@ describe("loadConfig", () => {
 
   it("leaves the CORS allowlist undefined when unset", () => {
     expect(loadConfig({}).corsOrigins).toBeUndefined();
+  });
+
+  describe("validateConfig (fail-fast contract)", () => {
+    it("throws ConfigValidationError when API_KEY is missing in production", () => {
+      expect(() => loadConfig({ NODE_ENV: "production" })).toThrow(
+        ConfigValidationError,
+      );
+      expect(() => loadConfig({ NODE_ENV: "production" })).toThrow(/API_KEY/);
+    });
+
+    it("throws when API_KEY is present-but-blank in production (treated as unset)", () => {
+      expect(() =>
+        validateConfig(loadConfig({ NODE_ENV: "production", API_KEY: "   " })),
+      ).toThrow(ConfigValidationError);
+    });
+
+    it("allows a missing API_KEY in development (historical open access preserved)", () => {
+      expect(() => loadConfig({ NODE_ENV: "development" })).not.toThrow();
+      expect(() => loadConfig({})).not.toThrow();
+    });
+
+    it("allows a missing API_KEY in test", () => {
+      expect(() => loadConfig({ NODE_ENV: "test" })).not.toThrow();
+    });
+
+    it("accepts a configured API_KEY in production", () => {
+      expect(() =>
+        loadConfig({ NODE_ENV: "production", API_KEY: "secret" }),
+      ).not.toThrow();
+    });
+
+    it("names the offending variable on the thrown error", () => {
+      try {
+        validateConfig(loadConfig({ NODE_ENV: "production" }));
+        throw new Error("expected validateConfig to throw");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConfigValidationError);
+        expect((err as ConfigValidationError).variable).toBe("API_KEY");
+      }
+    });
   });
 
   it("parses a comma-separated CORS_ORIGIN allowlist", () => {
