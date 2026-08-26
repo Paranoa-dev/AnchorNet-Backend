@@ -30,13 +30,13 @@ import { securityHeaders } from "./middleware/securityHeaders";
 import { idempotency } from "./middleware/idempotency";
 import { maintenanceMode } from "./middleware/maintenanceMode";
 import { createAuditLog } from "./middleware/auditLog";
-import { loadConfig, Config } from "./config";
+import { loadConfig, validateConfig, Config } from "./config";
 import { buildOpenApiSpec } from "./openapi";
 import { isReady } from "./utils/readiness";
 
 export function createApp(): Express {
   const app = express();
-  const config = loadConfig();
+  const config = validateConfig(loadConfig());
   app.set('trust proxy', 1); // Ensure req.ip reflects real client IP behind reverse proxy (#120)
 
   app.set("trust proxy", config.trustProxy);
@@ -136,5 +136,5 @@ export function createApp(): Express {
  * Expose the validated configuration for external consumers.
  */
 export function getConfig(): Config {
-  return loadConfig();
+  return validateConfig(loadConfig());
 }

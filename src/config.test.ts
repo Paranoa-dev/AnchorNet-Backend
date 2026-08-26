@@ -1,4 +1,4 @@
-import { loadConfig } from "./config";
+import { loadConfig, validateConfig, ConfigValidationError } from "./config";
 
 describe("loadConfig", () => {
   it("applies defaults when env is empty", () => {
@@ -180,5 +180,54 @@ describe("loadConfig", () => {
     it("defaults to false when unset", () => {
       expect(loadConfig({}).trustProxy).toBe(false);
     });
+  });
+});
+
+describe("validateConfig", () => {
+  it("returns the config unchanged when valid", () => {
+    const config = loadConfig({ API_KEY: "secret", PORT: "3001" });
+    expect(validateConfig(config)).toBe(config);
+  });
+
+  it("requires API_KEY in production and fails fast", () => {
+    const config = loadConfig({ NODE_ENV: "production" });
+    expect(() => validateConfig(config)).toThrow(ConfigValidationError);
+    expect(() => validateConfig(config)).toThrow(/API_KEY is required/);
+  });
+
+  it("allows a production deploy that sets API_KEY", () => {
+    const config = loadConfig({ NODE_ENV: "production", API_KEY: "secret" });
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it("does NOT require API_KEY in development (open access is allowed, not fatal)", () => {
+    const config = loadConfig({ NODE_ENV: "development" });
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it("does NOT require API_KEY in test", () => {
+    const config = loadConfig({ NODE_ENV: "test" });
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it("fails fast on an out-of-range PORT", () => {
+    const config = loadConfig({ PORT: "0" });
+    expect(() => validateConfig(config)).toThrow(ConfigValidationError);
+    expect(() => validateConfig(config)).toThrow(/PORT must be/);
+  });
+
+  it("fails fast on a non-integer PORT", () => {
+    const config = loadConfig({ PORT: "3001.5" });
+    expect(() => validateConfig(config)).toThrow(ConfigValidationError);
+  });
+
+  it("fails fast on a negative RATE_LIMIT_MAX", () => {
+    const config = loadConfig({ RATE_LIMIT_MAX: "-1" });
+    expect(() => validateConfig(config)).toThrow(ConfigValidationError);
+  });
+
+  it("fails fast on a negative IDEMPOTENCY_TTL_MS", () => {
+    const config = loadConfig({ IDEMPOTENCY_TTL_MS: "-1" });
+    expect(() => validateConfig(config)).toThrow(ConfigValidationError);
   });
 });

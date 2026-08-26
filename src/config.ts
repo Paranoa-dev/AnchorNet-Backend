@@ -146,3 +146,76 @@ export function loadConfig(
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
   };
 }
+
+/**
+ * Startup configuration contract.
+ *
+ * `loadConfig` applies safe defaults so the service can boot in development;
+ * `validateConfig` enforces the *required* values and fails fast (throws) before
+ * the server binds a port. Required vs optional is intentionally conservative:
+ * only values whose absence changes a security posture or makes the server
+ * undeliverable are required.
+ *
+ * Decisions (see PR for full inventory):
+ *  - `API_KEY` is REQUIRED when `NODE_ENV=production`. Without it the API-key
+ *    middleware degrades to a no-op (open mutating access). We refuse to start
+ *    in that insecure state instead of silently downgrading security. In every
+ *    other environment an unset key is allowed but logged loudly as open access.
+ *    The auth *policy* itself stays owned by `apiKeyAuth`; this only owns the
+ *    configuration contract.
+ *  - `PORT` must be a valid TCP port (1–65535); an invalid port makes the server
+ *    undeliverable, so it is required to be valid.
+ *  - `RATE_LIMIT_MAX` and `IDEMPOTENCY_TTL_MS` must be non-negative.
+ * All other values have safe defaults and never fail startup on their own.
+ *
+ * Validation is hand-written on purpose: it avoids adding a runtime schema
+ * dependency (keeping the project's lean 3-dependency footprint) and keeps the
+ * contract easy to review.
+ */
+export class ConfigValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigValidationError";
+  }
+}
+
+export function validateConfig(config: Config): Config {
+  if (config.env === "production" && !config.apiKey) {
+    throw new ConfigValidationError(
+      "API_KEY is required when NODE_ENV=production. Refusing to start with open (unauthenticated) mutating access. Set API_KEY to enable API-key authentication.",
+    );
+  }
+
+  if (
+    typeof config.port !== "number" ||
+    !Number.isInteger(config.port) ||
+    config.port < 1 ||
+    config.port > 65535
+  ) {
+    throw new ConfigValidationError(
+      `PORT must be an integer between 1 and 65535 (got ${String(config.port)})`,
+    );
+  }
+
+  if (config.rateLimitMax < 0) {
+    throw new ConfigValidationError(
+      `RATE_LIMIT_MAX must be >= 0 (got ${config.rateLimitMax})`,
+    );
+  }
+
+  if (config.idempotencyTtlMs < 0) {
+    throw new ConfigValidationError(
+      `IDEMPOTENCY_TTL_MS must be >= 0 (got ${config.idempotencyTtlMs})`,
+    );
+  }
+
+  if (!config.apiKey && config.env !== "test") {
+    // Loud, actionable warning: the service is running with open mutating access.
+    console.warn(
+      "[config] WARNING: API_KEY is not set — mutating requests are open to everyone (no authentication). " +
+        "Set API_KEY (or run in development) to avoid open access.",
+    );
+  }
+
+  return config;
+}
