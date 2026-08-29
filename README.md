@@ -176,6 +176,11 @@ from `src/middleware/rateLimiter.ts` unless overridden by configuration. When
 `API_KEY` authentication is configured, the presented key identifies the
 client; open deployments continue to use the client IP.
 
+> **Operational Note (Multi-Instance Deployments):**
+> Rate limiter state lives in a plain `Map` local to the middleware instance. In multi-instance deployments without sticky sessions, clients may receive N× their intended budget (where N is the number of replicas), and limits reset entirely upon instance restart.
+>
+> A shared distributed store (like Redis) is deliberately deferred until a broader persistence layer is introduced to the service, to avoid bloating operational requirements prematurely. However, memory growth is strictly bounded: the internal `Map` is capped at 5000 entries. When capacity is reached, it lazily prunes expired buckets before evicting the oldest entry to protect against memory-pressure attacks.
+
 `POST /api/v1/quote` is excluded from the global limiter via `skipPaths` and
 then receives its own stricter `rateLimiter({ max: 10, windowMs: 60_000 })`
 instance in `src/app.ts`. That quote limiter has separate in-memory counters

@@ -20,6 +20,9 @@ const DEFAULT_MAX = 30;
 /** Default rolling window length, in milliseconds. */
 const DEFAULT_WINDOW_MS = 60_000;
 
+/** Maximum number of buckets tracked in memory to prevent unbounded growth. */
+const MAX_BUCKETS = 5000;
+
 interface Bucket {
   count: number;
   resetAt: number;
@@ -89,6 +92,17 @@ export function rateLimiter(
     const bucket = buckets.get(key);
 
     if (!bucket || bucket.resetAt <= now) {
+      if (!bucket && buckets.size >= MAX_BUCKETS) {
+        for (const [k, v] of buckets.entries()) {
+          if (v.resetAt <= now) buckets.delete(k);
+        }
+        if (buckets.size >= MAX_BUCKETS) {
+          const oldestKey = buckets.keys().next().value;
+          if (oldestKey !== undefined) {
+            buckets.delete(oldestKey);
+          }
+        }
+      }
       buckets.set(key, { count: 1, resetAt: now + windowMs });
       next();
       return;

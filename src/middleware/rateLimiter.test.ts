@@ -182,4 +182,50 @@ describe("rateLimiter", () => {
     const blocked = await request(app).post("/api/v1/quote-history");
     expect(blocked.status).toBe(429);
   });
+
+  it("allows bypass across multiple middleware instances", async () => {
+    const app = express();
+    app.set("trust proxy", true);
+    
+    const limiter1 = rateLimiter({ max: 1, windowMs: 1000 });
+    app.post("/route1", limiter1, (_req, res) => res.status(201).json({ ok: true }));
+    
+    const limiter2 = rateLimiter({ max: 1, windowMs: 1000 });
+    app.post("/route2", limiter2, (_req, res) => res.status(201).json({ ok: true }));
+    
+    app.use(errorHandler);
+
+    // Client hits route1, consumes quota
+    await request(app).post("/route1").set("x-forwarded-for", "10.0.0.1").expect(201);
+    await request(app).post("/route1").set("x-forwarded-for", "10.0.0.1").expect(429);
+
+    // Same client hits route2, gets full quota again
+    await request(app).post("/route2").set("x-forwarded-for", "10.0.0.1").expect(201);
+  });
+
+  it("bounds memory growth by evicting the oldest bucket when capacity is reached", () => {
+    const limiter = rateLimiter({ max: 1, windowMs: 60000 });
+    const next = jest.fn();
+    const res = {} as Response;
+    
+    const req0 = { method: "POST", ip: "client-0", path: "/mutate" } as unknown as Request;
+    limiter(req0, res, next);
+    
+    limiter(req0, res, next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ status: 429 }));
+    
+    // Fill the map up to 5000 (MAX_BUCKETS)
+    for (let i = 1; i <= 5000; i++) {
+      const req = { method: "POST", ip: `client-${i}`, path: "/mutate" } as unknown as Request;
+      limiter(req, res, next);
+    }
+    
+    // Because Client 0 was inserted first, inserting client-5000 triggered eviction of client-0.
+    // Client 0 should now be granted a new quota.
+    next.mockClear();
+    limiter(req0, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalledWith(expect.objectContaining({ status: 429 }));
+  });
 });
+
