@@ -133,6 +133,50 @@ function parseTrustProxy(value: string | undefined): boolean | string | number {
   return trimmed;
 }
 
+/**
+ * Error thrown when a required configuration value is missing or invalid.
+ * Carries the offending variable name so the message can name it directly
+ * (see {@link validateConfig}).
+ */
+export class ConfigValidationError extends Error {
+  readonly variable: string;
+  constructor(variable: string, message: string) {
+    super(message);
+    this.name = "ConfigValidationError";
+    this.variable = variable;
+  }
+}
+
+/**
+ * Fail-fast configuration contract.
+ *
+ * Runs once at startup (invoked from {@link loadConfig}, before the server
+ * binds a port) and refuses to start when a *required* value is absent.
+ *
+ * Required vs optional policy (full inventory in the PR / docs/CONFIGURATION.md):
+ *   - Every value keeps its historical default and remains OPTIONAL *except*
+ *     `API_KEY`, whose absence silently disables authentication on every
+ *     mutating endpoint (see `src/middleware/apiKeyAuth.ts`). That is a
+ *     security-relevant fail-open behaviour, so `API_KEY` is REQUIRED when
+ *     `NODE_ENV === "production"`. In development/test the historical open
+ *     access is preserved so local runs need no secret.
+ *   - This issue owns the *general configuration contract*; the concrete
+ *     authentication *policy* (when/how the key is enforced) is owned by the
+ *     separate `apiKeyAuth` issue. Here we only guarantee the deployment
+ *     visibly refuses to start instead of silently running unauthenticated.
+ */
+export function validateConfig(config: Config): Config {
+  if (config.env === "production" && !config.apiKey) {
+    throw new ConfigValidationError(
+      "API_KEY",
+      "API_KEY is required when NODE_ENV=production. Without it, mutating " +
+        "endpoints are open to unauthenticated access (see src/middleware/apiKeyAuth.ts). " +
+        "Set API_KEY to a secret value, or run with NODE_ENV=development for local open access.",
+    );
+  }
+  return config;
+}
+
 /** Builds the {@link Config} from `process.env`, applying sensible defaults. */
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
@@ -147,7 +191,7 @@ export function loadConfig(
     );
   }
 
-  return {
+  const config: Config = {
     port: intFromEnv(env.PORT, 3001),
     feeBps,
     apiKey: apiKey ? apiKey : undefined,
@@ -166,6 +210,8 @@ export function loadConfig(
     metricsRateLimitWindowMs: intFromEnv(env.METRICS_RATE_LIMIT_WINDOW_MS, 60_000),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
   };
+
+  return validateConfig(config);
 }
 
 /**
