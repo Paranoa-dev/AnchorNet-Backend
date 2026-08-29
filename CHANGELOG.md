@@ -2,6 +2,16 @@ Changelog
 All notable changes to the AnchorNet API are documented here.
 
 [Unreleased]
+Fixed
+Idempotency: the replay cache is no longer a private `Map` closed over by
+each `idempotency()` call. All mounts share a process-wide
+`MemoryIdempotencyStore` with a hard entry cap (default 1024; expired and
+soonest-to-expire eviction), and concurrent same-key requests share one
+in-flight execution so only a single handler runs. Replay still returns the
+cached JSON body (not a conflict); only `status` + body are stored — no
+response headers. Multi-replica sharing still waits on the separate
+persistence-layer issue; this change closes the within-process holes without
+adding an external dependency.
 Added
 Security: the metrics endpoints (GET /api/v1/metrics and
 /api/v1/metrics/history) are now protected reads. When API_KEY or the new

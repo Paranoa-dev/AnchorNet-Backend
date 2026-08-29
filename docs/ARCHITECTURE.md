@@ -21,6 +21,13 @@ Settlement, anchor, and liquidity data are held in process-local in-memory
 repositories (src/repositories/*), all extending the shared
 InMemoryRepository base class.
 
+Idempotency cache (src/middleware/idempotency.ts) follows the same sequencing:
+a process-wide `MemoryIdempotencyStore` (shared across mounts, hard-capped,
+in-flight coalescing) closes within-process holes without introducing Redis/DB.
+Cross-replica idempotency is intentionally deferred to the persistence-layer
+issue — once that store exists, swap the default `IdempotencyStore`
+implementation rather than bolting on a second persistence stack here.
+
 Persistence-Swap Risk (read before swapping any repository for a DB)
 Several repositories already document that they are "swappable for a
 persistent … store later" (e.g. liquidityRepository.ts). This is a forward

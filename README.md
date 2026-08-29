@@ -186,11 +186,20 @@ message `rate limit exceeded, try again later`. Clients should treat this as a
 retryable response and back off before sending the next mutating request.
 
 Mutating requests may also send an Idempotency-Key header. The first request
-for a given key/method/path combination runs normally and its response is cached; any
-later request reusing the same key (within 24h) replays the original response
-instead of re-running the handler, so retried requests don't double-apply
-side effects (e.g. registering the same anchor twice). State is in-memory and
-per-process.
+for a given key/method/path combination runs normally and its JSON response is
+cached; any later request reusing the same key (within the configured TTL)
+replays the original response instead of re-running the handler, so retried
+requests don't double-apply side effects (e.g. registering the same anchor
+twice). Reusing a key with a different body returns `422 IDEMPOTENCY_KEY_REUSE`.
+
+Cache state is a process-wide in-memory store shared by every `idempotency()`
+mount (hard-capped; default 1024 entries, soonest-expiry eviction). Concurrent
+same-key requests share one in-flight execution. Multi-replica deployments still
+need an external shared store once the persistence layer lands — this is the
+same sequencing constraint as the rate limiter.
+
+Only status + JSON body are stored for replay; response headers are never
+cached.
 
 Walkthrough Example
 To verify how the idempotency system behaves, you can perform the following walkthrough using curl.
@@ -239,7 +248,9 @@ x-request-id: 4a123f52-1623-429b-ba67-3d0d0d5c2eb0
 "registeredAt": "2026-07-22T14:17:57.537Z",
 "active": true
 }
-Mismatched body (Known Gap): If you reuse the same Idempotency-Key but change the request payload (e.g., modifying the name field), the server will still return the cached 201 response corresponding to the first payload. Detecting mismatched request bodies (which would ideally return a 422 error) is currently a known gap in this system.
+Mismatched body: If you reuse the same Idempotency-Key but change the request
+payload, the server returns `422` with code `IDEMPOTENCY_KEY_REUSE` instead of
+replaying the original response.
 
 Bash
 
@@ -247,19 +258,18 @@ curl -i -X POST http://localhost:3001/api/v1/anchors
 -H "Content-Type: application/json"
 -H "Idempotency-Key: register-anchor-xyz"
 -d '{"id": "anchor-xyz", "name": "Anchor XYZ Modified Name"}'
-Response (Replayed from the original cached version):
+Response:
 
 http
 
-HTTP/1.1 201 Created
+HTTP/1.1 422 Unprocessable Entity
 Content-Type: application/json; charset=utf-8
-x-request-id: 184c8357-3fc3-4e2f-a87c-19042ab804fe
 
 {
-"id": "anchor-xyz",
-"name": "Anchor XYZ",
-"registeredAt": "2026-07-22T14:17:57.537Z",
-"active": true
+"error": {
+"code": "IDEMPOTENCY_KEY_REUSE",
+"message": "Idempotency key already used with a different request body"
+}
 }
 The process shuts down gracefully on SIGTERM/SIGINT: it stops accepting
 new connections, closes the HTTP server, marks /health/ready unready, and
