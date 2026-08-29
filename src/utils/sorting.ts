@@ -75,6 +75,12 @@ export function applySort<T>(
       let cmp: number;
       if (typeof av === "number" && typeof bv === "number") {
         cmp = av - bv;
+      } else if (typeof av === "bigint" && typeof bv === "bigint") {
+        cmp = av < bv ? -1 : (av > bv ? 1 : 0);
+      } else if (field === "amount" || field === "fee") {
+        const aBig = BigInt(av as any);
+        const bBig = BigInt(bv as any);
+        cmp = aBig < bBig ? -1 : (aBig > bBig ? 1 : 0);
       } else {
         cmp = String(av).localeCompare(String(bv));
       }

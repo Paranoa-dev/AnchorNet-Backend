@@ -50,8 +50,9 @@ export class LiquidityRepository extends InMemoryRepository<string, LiquidityEnt
     for (const entry of this.listAll()) {
       const pool = totals.get(entry.asset) ?? {
         asset: entry.asset,
-        total: 0,
+        total: 0n,
         anchors: 0,
+        lastUpdated: entry.updatedAt,
       };
       pool.total += entry.amount;
       pool.anchors += 1;

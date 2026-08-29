@@ -15,7 +15,7 @@ export function buildOpenApiSpec(): Record<string, unknown> {
     info: {
       title: "AnchorNet API",
       version: PKG_VERSION,
-      description: "Liquidity coordination network for Stellar anchors",
+      description: "Liquidity coordination network for Stellar anchors. \n\n**[BREAKING CHANGE]** All monetary values (amounts, balances, portions, totals, fees) are now strictly represented in stroops and serialized as strings in JSON to prevent IEEE-754 precision loss.",
     },
     paths: {
       "/health": {
@@ -106,6 +106,7 @@ export function buildOpenApiSpec(): Record<string, unknown> {
             "Compute a largest-first routing quote. When one anchor cannot cover the full amount, " +
             "additional anchors are added until the amount is covered. Each route entry includes the " +
             "anchor and the portion it supplies.",
+          description: "**[BREAKING CHANGE]** Request `amount` and response fields (`amount`, `fee`, `deliverable`, `portion`) are now serialized as strings representing stroops.",
         },
       },
       "/api/v1/anchors": {

@@ -17,7 +17,7 @@ async function setup(app: Express): Promise<void> {
   await request(app).post("/api/v1/anchors").send({ id: "anchorA" });
   await request(app)
     .post("/api/v1/liquidity")
-    .send({ anchor: "anchorA", asset: "USDC", amount: 1000 });
+    .send({ anchor: "anchorA", asset: "USDC", amount: "1000" });
 }
 
 describe("settlement routes", () => {
@@ -27,7 +27,7 @@ describe("settlement routes", () => {
 
     const res = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 400 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
 
     expect(res.status).toBe(201);
     expect(res.body.status).toBe("pending");
@@ -39,7 +39,7 @@ describe("settlement routes", () => {
     await setup(app);
     const open = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 400 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
 
     const res = await request(app).post(
       `/api/v1/settlements/${open.body.id}/execute`,
@@ -53,7 +53,7 @@ describe("settlement routes", () => {
     await setup(app);
     const open = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 400 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
 
     const res = await request(app).post(
       `/api/v1/settlements/${open.body.id}/cancel`,
@@ -62,15 +62,16 @@ describe("settlement routes", () => {
     expect(res.body.status).toBe("cancelled");
   });
 
-  it("records a cancel reason when provided", async () => {
+  it("records an optional reason when cancelling", async () => {
     const app = createApp();
     await setup(app);
     const open = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 400 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
 
     const res = await request(app)
       .post(`/api/v1/settlements/${open.body.id}/cancel`)
+
       .send({ reason: "duplicate request" });
 
     expect(res.status).toBe(200);
@@ -82,7 +83,7 @@ describe("settlement routes", () => {
     await setup(app);
     const open = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 400 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
 
     const longReason = "a".repeat(501);
     const res = await request(app)
@@ -99,7 +100,156 @@ describe("settlement routes", () => {
 
     const res = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 5000 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "5000" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("INSUFFICIENT_LIQUIDITY");
+  });
+
+  it("filters settlements by anchor", async () => {
+    const app = createApp();
+    await setup(app);
+    await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "100" });
+
+    const res = await request(app).get("/api/v1/settlements?anchor=anchorA");
+    expect(res.status).toBe(200);
+    expect(res.body.settlements).toHaveLength(1);
+  });
+
+  it("filters settlements by asset", async () => {
+    const app = createApp();
+    await setup(app);
+    await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "100" });
+
+    const matching = await request(app).get("/api/v1/settlements?asset=usdc");
+    expect(matching.status).toBe(200);
+    expect(matching.body.settlements).toHaveLength(1);
+
+    const nonMatching = await request(app).get(
+      "/api/v1/settlements?asset=EURC",
+    );
+    expect(nonMatching.body.settlements).toHaveLength(0);
+  });
+
+  it("sorts settlements by amount", async () => {
+    const app = createApp();
+    await setup(app);
+    await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "300" });
+    await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "100" });
+
+    const asc = await request(app).get(
+      "/api/v1/settlements?sort=amount&order=asc",
+    );
+    expect(asc.status).toBe(200);
+    expect(
+      asc.body.settlements.map((s: { amount: string }) => Number(s.amount)),
+    ).toEqual([100, 300]);
+
+    const desc = await request(app).get(
+      "/api/v1/settlements?sort=amount&order=desc",
+    );
+    expect(
+      desc.body.settlements.map((s: { amount: string }) => Number(s.amount)),
+    ).toEqual([300, 100]);
+  });
+
+  it("sorts settlements by amount with 9 and 10 numerically", async () => {
+    const app = createApp();
+    await setup(app);
+    await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "10" });
+    await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "9" });
+    await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "100" });
+
+    const asc = await request(app).get(
+      "/api/v1/settlements?sort=amount&order=asc",
+    );
+    expect(asc.status).toBe(200);
+    expect(
+      asc.body.settlements.map((s: { amount: string }) => Number(s.amount)),
+    ).toEqual([9, 10, 100]);
+  });
+
+
+  it("executes a pending settlement", async () => {
+    const app = createApp();
+    await setup(app);
+    const open = await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
+
+    const res = await request(app).post(
+      `/api/v1/settlements/${open.body.id}/execute`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("executed");
+  });
+
+  it("cancels a pending settlement", async () => {
+    const app = createApp();
+    await setup(app);
+    const open = await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
+
+    const res = await request(app).post(
+      `/api/v1/settlements/${open.body.id}/cancel`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("cancelled");
+  });
+
+  it("records a cancel reason when provided", async () => {
+    const app = createApp();
+    await setup(app);
+    const open = await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
+
+    const res = await request(app)
+      .post(`/api/v1/settlements/${open.body.id}/cancel`)
+      .send({ reason: "duplicate request" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.cancelReason).toBe("duplicate request");
+  });
+
+  it("rejects cancel reason over 500 characters", async () => {
+    const app = createApp();
+    await setup(app);
+    const open = await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "400" });
+
+    const longReason = "a".repeat(501);
+    const res = await request(app)
+      .post(`/api/v1/settlements/${open.body.id}/cancel`)
+      .send({ reason: longReason });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("BAD_REQUEST");
+  });
+
+  it("rejects settlement beyond available liquidity", async () => {
+    const app = createApp();
+    await setup(app);
+
+    const res = await request(app)
+      .post("/api/v1/settlements")
+      .send({ anchor: "anchorA", asset: "USDC", amount: "5000" });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("INSUFFICIENT_LIQUIDITY");
@@ -149,14 +299,14 @@ describe("settlement routes", () => {
     );
     expect(asc.status).toBe(200);
     expect(
-      asc.body.settlements.map((s: { amount: number }) => s.amount),
+      asc.body.settlements.map((s: { amount: string }) => Number(s.amount)),
     ).toEqual([100, 300]);
 
     const desc = await request(app).get(
       "/api/v1/settlements?sort=amount&order=desc",
     );
     expect(
-      desc.body.settlements.map((s: { amount: number }) => s.amount),
+      desc.body.settlements.map((s: { amount: string }) => Number(s.amount)),
     ).toEqual([300, 100]);
   });
 
@@ -165,20 +315,20 @@ describe("settlement routes", () => {
     await setup(app);
     await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 10 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "10" });
     await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 9 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "9" });
     await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 100 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "100" });
 
     const asc = await request(app).get(
       "/api/v1/settlements?sort=amount&order=asc",
     );
     expect(asc.status).toBe(200);
     expect(
-      asc.body.settlements.map((s: { amount: number }) => s.amount),
+      asc.body.settlements.map((s: { amount: string }) => Number(s.amount)),
     ).toEqual([9, 10, 100]);
   });
 
@@ -187,13 +337,13 @@ describe("settlement routes", () => {
     await setup(app);
     const s1 = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 100 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "100" });
     const s2 = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 50 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "50" });
     const s3 = await request(app)
       .post("/api/v1/settlements")
-      .send({ anchor: "anchorA", asset: "USDC", amount: 200 });
+      .send({ anchor: "anchorA", asset: "USDC", amount: "200" });
 
     const fees = [s1.body.fee, s2.body.fee, s3.body.fee];
     const sortedFees = [...fees].sort((a, b) => a - b);

@@ -9,7 +9,7 @@ export interface LiquidityEntry {
   /** Asset code the liquidity is denominated in (e.g. "USDC"). */
   asset: string;
   /** Amount of liquidity provided, in the asset's smallest unit. */
-  amount: number;
+  amount: bigint;
   /** ISO-8601 timestamp of the last update. */
   updatedAt: string;
 }
@@ -27,9 +27,9 @@ export interface WithdrawalRecord {
   /** Asset code the withdrawal was denominated in (e.g. "USDC"). */
   asset: string;
   /** Amount withdrawn, in the asset's smallest unit. */
-  amount: number;
+  amount: bigint;
   /** The anchor's resulting balance for the asset after the withdrawal (0 once fully drained). */
-  remainingBalance: number;
+  remainingBalance: bigint;
   /** ISO-8601 timestamp of the withdrawal. */
   timestamp: string;
 }
@@ -37,7 +37,7 @@ export interface WithdrawalRecord {
 /** Aggregate liquidity available for an asset across all anchors. */
 export interface Pool {
   asset: string;
-  total: number;
+  total: bigint;
   anchors: number;
   /** ISO-8601 timestamp of the most recently updated contributing entry. */
   lastUpdated?: string;
@@ -46,7 +46,7 @@ export interface Pool {
 /** A request to route `amount` of `asset` through available liquidity. */
 export interface QuoteRequest {
   asset: string;
-  amount: number;
+  amount: bigint;
 }
 
 /** A single leg in a multi-anchor route. */
@@ -54,17 +54,17 @@ export interface RouteEntry {
   /** Anchor identifier supplying the portion. */
   anchor: string;
   /** Amount sourced from this anchor, in the asset's smallest unit. */
-  portion: number;
+  portion: bigint;
 }
 
 /** A computed routing quote for a {@link QuoteRequest}. */
 export interface Quote {
   asset: string;
-  amount: number;
+  amount: bigint;
   /** Protocol fee charged for routing, in the asset's smallest unit. */
-  fee: number;
+  fee: bigint;
   /** Amount delivered after fees. */
-  deliverable: number;
+  deliverable: bigint;
   /** Anchors selected to source the liquidity, largest first, with per-anchor portions. */
   route: RouteEntry[];
 }

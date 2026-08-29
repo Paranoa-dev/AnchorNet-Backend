@@ -45,6 +45,12 @@ const SETTLEMENT_CSV_COLUMNS = csvColumnsFor<Settlement>()([
   "cancelReason",
 ]);
 
+const serializeSettlement = (s: Settlement) => ({
+  ...s,
+  amount: s.amount.toString(),
+  fee: s.fee.toString(),
+});
+
 export function anchorRouter(
   service: AnchorService,
   settlements?: SettlementService,
@@ -132,8 +138,10 @@ export function anchorRouter(
       SETTLEMENT_SORTABLE_FIELDS,
     );
 
+    // CSV export ignores pagination and returns every matching, sorted row.
     if (req.query.format === "csv") {
-      res.type("text/csv").send(toCsv(sorted, SETTLEMENT_CSV_COLUMNS));
+      const stringifiedSorted = sorted.map(serializeSettlement);
+      res.type("text/csv").send(toCsv(stringifiedSorted, SETTLEMENT_CSV_COLUMNS));
       return;
     }
 
@@ -142,7 +150,7 @@ export function anchorRouter(
       pageSize: req.query.pageSize,
     });
     res.json({
-      settlements: page.items,
+      settlements: page.items.map(serializeSettlement),
       pagination: { ...page, items: undefined },
     });
   });

@@ -13,6 +13,20 @@ export function requireString(value: unknown, field: string): string {
   return value.trim();
 }
 
+/** Parses a string (or numeric) value to a BigInt. */
+export function requireBigInt(value: unknown, field: string): bigint {
+  try {
+    const str = typeof value === "string" ? value : String(value);
+    const val = BigInt(str);
+    if (val <= 0n) {
+      throw new Error("non-positive");
+    }
+    return val;
+  } catch {
+    throw ApiError.badRequest(`"${field}" must be a positive integer (string format)`);
+  }
+}
+
 /** Ensures `value` is a non-empty string up to a maximum length. */
 export function requireStringMaxLength(
   value: unknown,

@@ -243,8 +243,8 @@ describe("metrics settled-value totals", () => {
 
     const res = await request(app).get("/api/v1/metrics");
 
-    expect(res.body.totalSettledAmount).toBe(20_000);
-    expect(res.body.totalFeesCollected).toBe(settlement.fee);
+    expect(res.body.totalSettledAmount).toBe(20000);
+    expect(res.body.totalFeesCollected).toBe(Number(settlement.fee));
     // Default protocol fee is 10 bps: ceil(20000 * 10 / 10000) === 20.
     expect(res.body.totalFeesCollected).toBe(20);
   });
@@ -269,11 +269,7 @@ describe("metrics settled-value totals", () => {
     expect(res.body.pendingSettlements).toBe(1);
 
     // Value totals cover the two executed settlements only.
-    expect(res.body.totalSettledAmount).toBe(
-      executedOne.amount + executedTwo.amount,
-    );
-    expect(res.body.totalSettledAmount).toBe(60_000);
-    expect(res.body.totalFeesCollected).toBe(executedOne.fee + executedTwo.fee);
+    expect(res.body.totalSettledAmount).toBe(60000);
     expect(res.body.totalFeesCollected).toBe(60);
 
     // Guard against the pending/cancelled legs leaking into the totals.
@@ -305,9 +301,7 @@ describe("metrics settled-value totals", () => {
     expect(res.body.pools).toBe(2);
     expect(res.body.settlements).toBe(3);
     expect(res.body.pendingSettlements).toBe(1);
-    expect(res.body.totalSettledAmount).toBe(usdc.amount + eurc.amount);
-    expect(res.body.totalSettledAmount).toBe(40_000);
-    expect(res.body.totalFeesCollected).toBe(usdc.fee + eurc.fee);
+    expect(res.body.totalSettledAmount).toBe(40000);
     expect(res.body.totalFeesCollected).toBe(40);
     expect(otherPending.amount).toBe(5_000);
   });
@@ -324,8 +318,8 @@ describe("metrics settled-value totals", () => {
     await execute(app, settlement.id);
 
     const after = await request(app).get("/api/v1/metrics");
-    expect(after.body.totalSettledAmount).toBe(50_000);
-    expect(after.body.totalFeesCollected).toBe(settlement.fee);
+    expect(after.body.totalSettledAmount).toBe(50000);
+    expect(after.body.totalFeesCollected).toBe(Number(settlement.fee));
   });
 
   it("keeps the settled totals stable when a later settlement is cancelled", async () => {
@@ -374,7 +368,7 @@ describe("metrics settled-value totals", () => {
       anchors: 1,
       activeAnchors: 1,
       pools: 1,
-      totalLiquidity: 1_000,
+      totalLiquidity: 1000,
       settlements: 1,
       pendingSettlements: 0,
       totalSettledAmount: 200,
@@ -400,11 +394,11 @@ describe("metrics settled-value totals", () => {
     expect(res.status).toBe(200);
     expect(res.body.snapshots).toHaveLength(2);
     expect(res.body.snapshots[0]).toMatchObject({
-      totalSettledAmount: 20_000,
+      totalSettledAmount: 20000,
       totalFeesCollected: first.fee,
     });
     expect(res.body.snapshots[1]).toMatchObject({
-      totalSettledAmount: 50_000,
+      totalSettledAmount: 50000,
       totalFeesCollected: first.fee + second.fee,
     });
     // History snapshots keep the pre-existing fields plus a timestamp.

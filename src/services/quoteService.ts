@@ -9,17 +9,21 @@
 import { LiquidityRepository } from "../repositories/liquidityRepository";
 import { Quote, RouteEntry } from "../models/liquidity";
 import { ApiError } from "../errors/ApiError";
-import { normalizeAsset, requirePositiveNumber } from "../utils/validation";
+import { normalizeAsset, requireBigInt } from "../utils/validation";
 
 /** Default protocol fee in basis points (10 bps = 0.1%). */
-const DEFAULT_FEE_BPS = 10;
-const BPS_DIVISOR = 10_000;
+const DEFAULT_FEE_BPS = 10n;
+const BPS_DIVISOR = 10_000n;
 
 export class QuoteService {
+  private readonly feeBps: bigint;
+
   constructor(
     private readonly repo: LiquidityRepository,
-    private readonly feeBps: number = DEFAULT_FEE_BPS,
-  ) {}
+    feeBps: bigint | number = DEFAULT_FEE_BPS,
+  ) {
+    this.feeBps = BigInt(feeBps);
+  }
 
   /**
    * Builds a {@link Quote} for routing `amount` of `asset`. Throws a 400 if
@@ -27,14 +31,18 @@ export class QuoteService {
    */
   quote(input: { asset: unknown; amount: unknown }): Quote {
     const asset = normalizeAsset(input.asset);
-    const amount = requirePositiveNumber(input.amount, "amount");
+    const amount = requireBigInt(input.amount, "amount");
 
     const sources = this.repo
       .byAsset(asset)
       .slice()
-      .sort((a, b) => b.amount - a.amount || a.anchor.localeCompare(b.anchor));
+      .sort((a, b) => {
+        if (b.amount > a.amount) return 1;
+        if (b.amount < a.amount) return -1;
+        return a.anchor.localeCompare(b.anchor);
+      });
 
-    const available = sources.reduce((sum, e) => sum + e.amount, 0);
+    const available = sources.reduce((sum, e) => sum + e.amount, 0n);
     if (available < amount) {
       throw ApiError.badRequest(
         `insufficient liquidity for ${asset}: requested ${amount}, available ${available}`,
@@ -45,13 +53,15 @@ export class QuoteService {
     const route: RouteEntry[] = [];
     let remaining = amount;
     for (const entry of sources) {
-      if (remaining <= 0) break;
-      const taken = Math.min(remaining, entry.amount);
+      if (remaining <= 0n) break;
+      const taken = remaining < entry.amount ? remaining : entry.amount;
       route.push({ anchor: entry.anchor, portion: taken });
       remaining -= taken;
     }
 
-    const fee = Math.ceil((amount * this.feeBps) / BPS_DIVISOR);
+    // Exact BigInt ceiling division: (amount * feeBps + (BPS_DIVISOR - 1n)) / BPS_DIVISOR
+    const fee = (amount * this.feeBps + (BPS_DIVISOR - 1n)) / BPS_DIVISOR;
+
     return {
       asset,
       amount,

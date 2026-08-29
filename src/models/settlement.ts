@@ -30,9 +30,9 @@ export interface Settlement {
   /** Asset being settled. */
   asset: string;
   /** Gross amount reserved from the pool. */
-  amount: number;
+  amount: bigint;
   /** Protocol fee withheld from the amount. */
-  fee: number;
+  fee: bigint;
   /** Current lifecycle state. */
   status: SettlementStatus;
   /** ISO-8601 timestamp of creation. */

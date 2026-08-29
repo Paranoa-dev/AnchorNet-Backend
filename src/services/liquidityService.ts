@@ -12,7 +12,7 @@ import { SettlementService } from "./settlementService";
 import { BoundedHistory } from "../utils/history";
 import {
   normalizeAsset,
-  requirePositiveNumber,
+  requireBigInt,
   requireString,
 } from "../utils/validation";
 
@@ -44,10 +44,10 @@ export class LiquidityService {
   }): LiquidityEntry {
     const anchor = requireString(input.anchor, "anchor");
     const asset = normalizeAsset(input.asset);
-    const amount = requirePositiveNumber(input.amount, "amount");
+    const amount = requireBigInt(input.amount, "amount");
 
     const existing = this.repo.get(anchor, asset);
-    const total = (existing?.amount ?? 0) + amount;
+    const total = (existing?.amount ?? 0n) + amount;
 
     return this.repo.upsert({
       anchor,
@@ -71,7 +71,7 @@ export class LiquidityService {
   }): LiquidityEntry {
     const anchor = requireString(input.anchor, "anchor");
     const asset = normalizeAsset(input.asset);
-    const amount = requirePositiveNumber(input.amount, "amount");
+    const amount = requireBigInt(input.amount, "amount");
 
     const existing = this.repo.get(anchor, asset);
     if (!existing) {
@@ -101,11 +101,6 @@ export class LiquidityService {
     const updatedAt = new Date().toISOString();
 
     // Record the successful withdrawal for auditability BEFORE mutating state.
-    // This runs only after every guard above has passed, so a failed withdrawal
-    // (unknown balance, insufficient funds, or reserved-liquidity breach) leaves
-    // no record. `remaining` is computed once and used by both branches below, so
-    // the recorded `remainingBalance` is correct whether the entry survives or is
-    // removed once it reaches zero.
     this.withdrawalHistory.push({
       anchor,
       asset,
@@ -114,9 +109,9 @@ export class LiquidityService {
       timestamp: updatedAt,
     });
 
-    if (remaining === 0) {
+    if (remaining === 0n) {
       this.repo.remove(anchor, asset);
-      return { anchor, asset, amount: 0, updatedAt };
+      return { anchor, asset, amount: 0n, updatedAt };
     }
 
     return this.repo.upsert({ anchor, asset, amount: remaining, updatedAt });
@@ -125,22 +120,6 @@ export class LiquidityService {
   /**
    * Transfers `amount` of liquidity in `asset` from one anchor to another,
    * atomically, as a single logical operation.
-   *
-   * This replaces the withdraw-then-add two-step, which was not atomic and
-   * briefly reduced the pool total between the two calls. All validation runs
-   * before any mutation, so a rejected transfer never changes either anchor's
-   * balance. Throws 404 if the source anchor holds no balance in the asset,
-   * or 400 (`INSUFFICIENT_LIQUIDITY`) if the transfer exceeds the source
-   * balance, mirroring {@link withdrawLiquidity}. Self-transfers are rejected
-   * with 400.
-   *
-   * No reserved-liquidity check is needed: the source decrement always equals
-   * the destination increment, so the asset's pool total — and therefore the
-   * liquidity available for settlements — is unchanged by construction.
-   *
-   * Returns the resulting entries for both anchors. When the full source
-   * balance is transferred, the source entry is removed and returned with
-   * `amount: 0`, mirroring {@link withdrawLiquidity}.
    */
   transferLiquidity(input: {
     from: unknown;
@@ -151,7 +130,7 @@ export class LiquidityService {
     const from = requireString(input.from, "from");
     const to = requireString(input.to, "to");
     const asset = normalizeAsset(input.asset);
-    const amount = requirePositiveNumber(input.amount, "amount");
+    const amount = requireBigInt(input.amount, "amount");
 
     if (from === to) {
       throw ApiError.badRequest(
@@ -173,17 +152,15 @@ export class LiquidityService {
       );
     }
 
-    // Every check that can throw is above this line, so the two mutations
-    // below are atomic in effect: the transfer is never partially applied.
     const updatedAt = new Date().toISOString();
     const fromRemaining = source.amount - amount;
     const destination = this.repo.get(to, asset);
-    const toTotal = (destination?.amount ?? 0) + amount;
+    const toTotal = (destination?.amount ?? 0n) + amount;
 
     let fromEntry: LiquidityEntry;
-    if (fromRemaining === 0) {
+    if (fromRemaining === 0n) {
       this.repo.remove(from, asset);
-      fromEntry = { anchor: from, asset, amount: 0, updatedAt };
+      fromEntry = { anchor: from, asset, amount: 0n, updatedAt };
     } else {
       fromEntry = this.repo.upsert({
         anchor: from,
@@ -249,13 +226,6 @@ export class LiquidityService {
 
   /**
    * Returns the in-memory audit trail of successful withdrawals, oldest first.
-   *
-   * Each record captures the anchor, asset, amount withdrawn, the resulting
-   * balance, and an ISO-8601 timestamp. Bounded to the most recent
-   * {@link MAX_WITHDRAWAL_HISTORY} entries; older entries are evicted
-   * automatically. This survives the removal of a `LiquidityEntry` once its
-   * balance reaches zero, where the mutating-request audit-log middleware does
-   * not (it records only method/path/status, not amounts).
    */
   listWithdrawals(): WithdrawalRecord[] {
     return this.withdrawalHistory.all();

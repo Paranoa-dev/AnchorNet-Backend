@@ -18,42 +18,46 @@ import { Settlement } from "../models/settlement";
 import { ApiError } from "../errors/ApiError";
 import {
   normalizeAsset,
+  requireBigInt,
   requirePositiveInteger,
-  requirePositiveNumber,
   requireString,
   requireStringMaxLength,
 } from "../utils/validation";
 
-const DEFAULT_FEE_BPS = 10;
-const BPS_DIVISOR = 10_000;
+const DEFAULT_FEE_BPS = 10n;
+const BPS_DIVISOR = 10_000n;
 
 export class SettlementService {
-  private readonly reserved = new Map<string, number>();
-  private readonly consumed = new Map<string, number>();
+  private readonly reserved = new Map<string, bigint>();
+  private readonly consumed = new Map<string, bigint>();
 
   constructor(
     private readonly settlements: SettlementRepository,
     private readonly liquidity: LiquidityRepository,
     private readonly anchors: AnchorService,
-    private readonly feeBps: number = DEFAULT_FEE_BPS,
-  ) {}
+    feeBps: bigint | number = DEFAULT_FEE_BPS,
+  ) {
+    this.feeBps = BigInt(feeBps);
+  }
+
+  private readonly feeBps: bigint;
 
   /** Liquidity available for new settlements in `asset`. */
-  available(asset: string): number {
+  available(asset: string): bigint {
     const pool = this.liquidity.pools().find((p) => p.asset === asset);
-    const total = pool?.total ?? 0;
-    return total - (this.reserved.get(asset) ?? 0) - (this.consumed.get(asset) ?? 0);
+    const total = pool?.total ?? 0n;
+    return total - (this.reserved.get(asset) ?? 0n) - (this.consumed.get(asset) ?? 0n);
   }
   /** Returns the amount of liquidity reserved for pending settlements for a given asset. */
-  public getReservedLiquidity(asset: string): number {
-    return this.reserved.get(asset) ?? 0;
+  public getReservedLiquidity(asset: string): bigint {
+    return this.reserved.get(asset) ?? 0n;
   }
 
   /** Opens a pending settlement, reserving liquidity from the pool. */
   open(input: { anchor: unknown; asset: unknown; amount: unknown }): Settlement {
     const anchor = requireString(input.anchor, "anchor");
     const asset = normalizeAsset(input.asset);
-    const amount = requirePositiveNumber(input.amount, "amount");
+    const amount = requireBigInt(input.amount, "amount");
 
     if (!this.anchors.isActive(anchor)) {
       throw ApiError.badRequest(
@@ -69,8 +73,8 @@ export class SettlementService {
       );
     }
 
-    this.reserved.set(asset, (this.reserved.get(asset) ?? 0) + amount);
-    const fee = Math.ceil((amount * this.feeBps) / BPS_DIVISOR);
+    this.reserved.set(asset, (this.reserved.get(asset) ?? 0n) + amount);
+    const fee = (amount * this.feeBps + (BPS_DIVISOR - 1n)) / BPS_DIVISOR;
 
     return this.settlements.create({
       anchor,
@@ -87,11 +91,11 @@ export class SettlementService {
     const settlement = this.requirePending(idInput);
     this.reserved.set(
       settlement.asset,
-      (this.reserved.get(settlement.asset) ?? 0) - settlement.amount,
+      (this.reserved.get(settlement.asset) ?? 0n) - settlement.amount,
     );
     this.consumed.set(
       settlement.asset,
-      (this.consumed.get(settlement.asset) ?? 0) + settlement.amount,
+      (this.consumed.get(settlement.asset) ?? 0n) + settlement.amount,
     );
     return this.settlements.save({ ...settlement, status: "executed" });
   }
@@ -110,7 +114,7 @@ export class SettlementService {
 
     this.reserved.set(
       settlement.asset,
-      (this.reserved.get(settlement.asset) ?? 0) - settlement.amount,
+      (this.reserved.get(settlement.asset) ?? 0n) - settlement.amount,
     );
     return this.settlements.save({
       ...settlement,

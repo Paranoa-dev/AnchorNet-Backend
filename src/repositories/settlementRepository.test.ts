@@ -1,12 +1,12 @@
 import { SettlementRepository } from "./settlementRepository";
 import { Settlement, isSettlementStatus } from "../models/settlement";
 
-function draft(anchor: string, amount: number): Omit<Settlement, "id"> {
+function draft(anchor: string, amount: bigint): Omit<Settlement, "id"> {
   return {
     anchor,
     asset: "USDC",
     amount,
-    fee: 0,
+    fee: 0n,
     status: "pending",
     createdAt: "2024-01-01T00:00:00.000Z",
   };
@@ -15,8 +15,8 @@ function draft(anchor: string, amount: number): Omit<Settlement, "id"> {
 describe("SettlementRepository", () => {
   it("assigns incrementing ids", () => {
     const repo = new SettlementRepository();
-    const first = repo.create(draft("anchorA", 100));
-    const second = repo.create(draft("anchorB", 200));
+    const first = repo.create(draft("anchorA", 100n));
+    const second = repo.create(draft("anchorB", 200n));
 
     expect(first.id).toBe(1);
     expect(second.id).toBe(2);
@@ -26,7 +26,7 @@ describe("SettlementRepository", () => {
   describe("save anchor reindex", () => {
     it("rebuilds the anchor index when save() changes the anchor", () => {
       const repo = new SettlementRepository();
-      const created = repo.create(draft("anchorA", 100)); // id 1, indexed under anchorA
+      const created = repo.create(draft("anchorA", 100n)); // id 1, indexed under anchorA
 
       repo.save({ ...created, anchor: "anchorB" }); // anchor changes
 
@@ -41,7 +41,7 @@ describe("SettlementRepository", () => {
       const repo = new SettlementRepository();
 
       const previewed = repo.peekNextId();
-      const created = repo.create(draft("anchorA", 100));
+      const created = repo.create(draft("anchorA", 100n));
 
       // Locks in the synchronous-only guarantee: peek -> create (no await in
       // between) must return the exact id that was previewed. If this ever
@@ -55,7 +55,7 @@ describe("SettlementRepository", () => {
 
     it("yields a stable preview when no create() runs in between", () => {
       const repo = new SettlementRepository();
-      repo.create(draft("anchorA", 100));
+      repo.create(draft("anchorA", 100n));
 
       const first = repo.peekNextId();
       const second = repo.peekNextId();
@@ -66,7 +66,7 @@ describe("SettlementRepository", () => {
 
   it("saves status changes", () => {
     const repo = new SettlementRepository();
-    const created = repo.create(draft("anchorA", 100));
+    const created = repo.create(draft("anchorA", 100n));
     repo.save({ ...created, status: "executed" });
 
     expect(repo.get(created.id)?.status).toBe("executed");
@@ -74,17 +74,17 @@ describe("SettlementRepository", () => {
 
   it("lists settlements most recent first", () => {
     const repo = new SettlementRepository();
-    repo.create(draft("anchorA", 100));
-    repo.create(draft("anchorB", 200));
+    repo.create(draft("anchorA", 100n));
+    repo.create(draft("anchorB", 200n));
 
     expect(repo.all().map((s) => s.id)).toEqual([2, 1]);
   });
 
   it("filters by anchor", () => {
     const repo = new SettlementRepository();
-    repo.create(draft("anchorA", 100));
-    repo.create(draft("anchorB", 200));
-    repo.create(draft("anchorA", 300));
+    repo.create(draft("anchorA", 100n));
+    repo.create(draft("anchorB", 200n));
+    repo.create(draft("anchorA", 300n));
 
     expect(repo.byAnchor("anchorA")).toHaveLength(2);
     expect(repo.count()).toBe(3);
@@ -93,7 +93,7 @@ describe("SettlementRepository", () => {
   describe("remove", () => {
     it("removes an existing settlement and returns true", () => {
       const repo = new SettlementRepository();
-      const s = repo.create(draft("anchorA", 100));
+      const s = repo.create(draft("anchorA", 100n));
       expect(repo.count()).toBe(1);
 
       const result = repo.remove(s.id);
@@ -106,7 +106,7 @@ describe("SettlementRepository", () => {
 
     it("returns false when removing a non-existent id", () => {
       const repo = new SettlementRepository();
-      repo.create(draft("anchorA", 100));
+      repo.create(draft("anchorA", 100n));
 
       const result = repo.remove(999);
       expect(result).toBe(false);
@@ -144,7 +144,7 @@ describe("isSettlementStatus", () => {
 describe("SettlementRepository rejects invalid status", () => {
   it("save throws on invalid status", () => {
     const repo = new SettlementRepository();
-    const created = repo.create(draft("anchorA", 100));
+    const created = repo.create(draft("anchorA", 100n));
     const invalid = { ...created, status: "bogus" } as unknown as Settlement;
 
     expect(() => repo.save(invalid)).toThrow(/Invalid settlement status/);
@@ -153,10 +153,11 @@ describe("SettlementRepository rejects invalid status", () => {
   it("create throws on invalid status", () => {
     const repo = new SettlementRepository();
     const invalid = {
-      ...draft("anchorA", 100),
+      ...draft("anchorA", 100n),
       status: "bogus",
     } as unknown as Omit<Settlement, "id">;
 
     expect(() => repo.create(invalid)).toThrow(/Invalid settlement status/);
   });
 });
+
