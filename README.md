@@ -136,7 +136,33 @@ client-side. Each read also appends a timestamped snapshot to an in-memory
 rolling history (last 50 reads).
 GET /api/v1/metrics/history – the recorded metrics snapshots, oldest first
 ({ snapshots: [...] }); each snapshot carries the same fields as
-GET /api/v1/metrics plus an ISO-8601 timestamp
+GET /api/v1/metrics plus an ISO-8601 timestamp. Retention is bounded to the
+most recent 50 snapshots (MAX_HISTORY in src/routes/metrics.ts); older ones
+are evicted, so the response can never grow without limit.
+
+Metrics access (protected reads). Unlike the other read endpoints, the two
+metrics endpoints expose aggregate operational intelligence — participant
+counts, total liquidity, settlement volume and protocol fees earned, sampled
+over time. That is useful to an operator and equally useful to someone
+profiling the network before targeting it, so exposing it is treated as a
+deliberate decision rather than a middleware side effect:
+
+- When neither API_KEY nor METRICS_API_KEY is set, metrics reads are open
+  (unchanged local/dev behaviour).
+- When either key is set, GET /api/v1/metrics and GET /api/v1/metrics/history
+  require a matching x-api-key header and return 401 otherwise.
+- A monitoring scraper should be given METRICS_API_KEY — a read-only
+  credential accepted for metrics but not for any mutating route — so
+  monitoring keeps working without handing the write key to the scraper. The
+  primary API_KEY is also accepted for metrics, so an operator already holding
+  it needs nothing extra. Example scrape:
+  `curl -H "x-api-key: $METRICS_API_KEY" http://localhost:3001/api/v1/metrics`
+- Metrics reads (both endpoints) are rate-limited per client via
+  METRICS_RATE_LIMIT_MAX (default 120/min), so the history endpoint cannot be
+  used as a cheap load generator. This read-path limiting is scoped to the
+  metrics mount and owned by this change; extending rate limiting to all reads
+  and to a shared multi-instance store is tracked by the separate
+  rate-limiter issue.
 Errors use a uniform envelope: { "error": { "code", "message" } }, including
 malformed JSON (400) and oversized request bodies (413,
 PAYLOAD_TOO_LARGE). Every response carries an x-request-id header for
@@ -252,7 +278,10 @@ The application is configured using environment variables. Every environment var
 Variable Default Valid Range / Format Description
 PORT 3001 Positive integer (typically 1 - 65535) HTTP port the server binds to. Non-numeric values fall back to default.
 FEE_BPS 10 Integer between 0 and 10000 (inclusive) Protocol fee in basis points applied to settlements and quotes. The process throws an error and fails to start if configured outside this range.
-API_KEY (Unset) Any non-empty string If set, mutating requests (POST/PUT/PATCH/DELETE) must send an matching x-api-key header. Whitespace-only values are treated as unset.
+API_KEY (Unset) Any non-empty string If set, mutating requests (POST/PUT/PATCH/DELETE) must send an matching x-api-key header. Whitespace-only values are treated as unset. Also accepted for metrics reads.
+METRICS_API_KEY (Unset) Any non-empty string Read-only credential for the metrics endpoints. If either this or API_KEY is set, GET /api/v1/metrics and /history require a matching x-api-key header. This key unlocks metrics only — it cannot authorize mutating requests — so a monitoring scraper can read metrics without the write key. Whitespace-only values are treated as unset.
+METRICS_RATE_LIMIT_MAX 120 Positive integer Maximum metrics reads allowed per client within the metrics window. Covers reads (unlike the mutating-only global limiter) so the history endpoint is not an unlimited load generator.
+METRICS_RATE_LIMIT_WINDOW_MS 60000 (1 min) Positive integer Length of the rolling window for the metrics read rate limit.
 CORS_ORIGIN (Unset) Comma-separated list of origin URLs Allowed CORS origins. Whitespace around entries is trimmed; empty entries are ignored. If unset, every origin is permitted.
 BODY_LIMIT 100kb Express bytes-compatible string (e.g., "500kb", "2mb") Maximum accepted JSON request body size. Default is applied if value is blank.
 MAINTENANCE_MODE false "1", "true" (case-insensitive) to enable When enabled, mutating requests are rejected with a 503 Service Unavailable error, while read requests continue to function normally.

@@ -198,6 +198,85 @@ describe("metrics route", () => {
   });
 });
 
+describe("metrics history retention", () => {
+  it("caps the retained snapshot history at 50 entries", async () => {
+    const app = createApp();
+    await seed(app);
+
+    // Each read of the current metrics appends one snapshot. Drive well past
+    // the MAX_HISTORY = 50 bound to prove the oldest entries are evicted
+    // rather than accumulating without limit.
+    for (let i = 0; i < 60; i += 1) {
+      await request(app).get("/api/v1/metrics");
+    }
+
+    const res = await request(app).get("/api/v1/metrics/history");
+    expect(res.status).toBe(200);
+    expect(res.body.snapshots).toHaveLength(50);
+  });
+
+  it("retains the most recent snapshots, dropping the oldest", async () => {
+    jest.useFakeTimers();
+    try {
+      const app = createApp();
+      await seed(app);
+
+      // Take 51 snapshots at distinct, strictly increasing timestamps so the
+      // very first one is the single entry that must be evicted at cap.
+      for (let i = 0; i < 51; i += 1) {
+        jest.setSystemTime(new Date(2026, 0, 1, 0, 0, i));
+        await request(app).get("/api/v1/metrics");
+      }
+
+      const res = await request(app).get("/api/v1/metrics/history");
+      expect(res.body.snapshots).toHaveLength(50);
+      // The oldest (second 0) is gone; the window now starts at second 1.
+      expect(res.body.snapshots[0].timestamp).toBe(
+        new Date(2026, 0, 1, 0, 0, 1).toISOString(),
+      );
+      expect(res.body.snapshots[49].timestamp).toBe(
+        new Date(2026, 0, 1, 0, 0, 50).toISOString(),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe("metrics read rate limiting", () => {
+  const original = process.env.METRICS_RATE_LIMIT_MAX;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.METRICS_RATE_LIMIT_MAX;
+    else process.env.METRICS_RATE_LIMIT_MAX = original;
+  });
+
+  it("rejects metrics reads over the per-client budget with 429", async () => {
+    process.env.METRICS_RATE_LIMIT_MAX = "3";
+    const app = createApp();
+
+    for (let i = 0; i < 3; i += 1) {
+      const ok = await request(app).get("/api/v1/metrics");
+      expect(ok.status).toBe(200);
+    }
+
+    const blocked = await request(app).get("/api/v1/metrics");
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe("RATE_LIMITED");
+  });
+
+  it("counts history reads against the same read budget", async () => {
+    process.env.METRICS_RATE_LIMIT_MAX = "2";
+    const app = createApp();
+
+    expect((await request(app).get("/api/v1/metrics")).status).toBe(200);
+    expect((await request(app).get("/api/v1/metrics/history")).status).toBe(200);
+
+    const blocked = await request(app).get("/api/v1/metrics/history");
+    expect(blocked.status).toBe(429);
+  });
+});
+
 describe("metrics settled-value totals", () => {
   it("reports zero settled amount and fees on a fresh app", async () => {
     const res = await request(createApp()).get("/api/v1/metrics");

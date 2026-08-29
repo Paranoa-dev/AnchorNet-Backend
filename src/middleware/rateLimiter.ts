@@ -41,6 +41,18 @@ export interface RateLimitOptions {
    * require the exclusion list to account for the mount prefix.
    */
   skipPaths?: string[];
+  /**
+   * When `true`, this limiter also counts read (non-mutating) requests toward
+   * the per-client budget. Defaults `false`, so the global limiter's
+   * writes-only behaviour is unchanged.
+   *
+   * This flag is enabled only for the metrics mount, whose read endpoints
+   * (notably `GET /history`) are otherwise unlimited. Extending read limiting
+   * to every route — and the shared, multi-instance store that would require —
+   * is deliberately left to the separate rate-limiter issue; this PR owns the
+   * flag and its use for metrics only.
+   */
+  limitReads?: boolean;
 }
 
 export function rateLimiter(
@@ -52,7 +64,7 @@ export function rateLimiter(
   const buckets = new Map<string, Bucket>();
 
   return (req: Request, _res: Response, next: NextFunction): void => {
-    if (!MUTATING_METHODS.has(req.method)) {
+    if (!MUTATING_METHODS.has(req.method) && !options.limitReads) {
       next();
       return;
     }

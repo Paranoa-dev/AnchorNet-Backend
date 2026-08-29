@@ -12,6 +12,14 @@ export interface Config {
   /** Optional API key required for mutating requests (disabled if unset). */
   apiKey?: string;
   /**
+   * Optional read-only credential that grants access to the metrics endpoints
+   * (`GET /api/v1/metrics` and `/history`) without granting the write access
+   * carried by {@link apiKey}. Lets a monitoring scraper read operational
+   * metrics with a credential that cannot mutate the network. Whitespace-only
+   * values are treated as unset.
+   */
+  metricsApiKey?: string;
+  /**
    * Allowed CORS origins. `undefined` means no allowlist is configured and
    * every origin is permitted (the historical default behavior).
    */
@@ -30,6 +38,15 @@ export interface Config {
   rateLimitMax: number;
   /** Length of the rolling window, in milliseconds. */
   rateLimitWindowMs: number;
+  /**
+   * Maximum metrics **reads** allowed per client within the metrics window.
+   * Unlike {@link rateLimitMax}, this budget covers the read-only metrics
+   * endpoints, which are otherwise unlimited. Defaults higher than the
+   * mutating limit so a polling scraper is not throttled.
+   */
+  metricsRateLimitMax: number;
+  /** Length of the metrics read rate-limiting window, in milliseconds. */
+  metricsRateLimitWindowMs: number;
   /**
    * Express `trust proxy` setting. When enabled behind a load balancer,
    * Express trusts the `X-Forwarded-For` header so `req.ip` reflects the
@@ -121,6 +138,7 @@ export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): Config {
   const apiKey = env.API_KEY?.trim();
+  const metricsApiKey = env.METRICS_API_KEY?.trim();
   const feeBps = intFromEnv(env.FEE_BPS, 10);
 
   if (feeBps < MIN_FEE_BPS || feeBps > MAX_FEE_BPS) {
@@ -133,6 +151,7 @@ export function loadConfig(
     port: intFromEnv(env.PORT, 3001),
     feeBps,
     apiKey: apiKey ? apiKey : undefined,
+    metricsApiKey: metricsApiKey ? metricsApiKey : undefined,
     corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
     bodyLimit: env.BODY_LIMIT?.trim() || DEFAULT_BODY_LIMIT,
     maintenanceMode: parseBooleanFlag(env.MAINTENANCE_MODE),
@@ -143,6 +162,8 @@ export function loadConfig(
     idempotencyTtlMs: intFromEnv(env.IDEMPOTENCY_TTL_MS, 86_400_000),
     rateLimitMax: intFromEnv(env.RATE_LIMIT_MAX, 30),
     rateLimitWindowMs: intFromEnv(env.RATE_LIMIT_WINDOW_MS, 60_000),
+    metricsRateLimitMax: intFromEnv(env.METRICS_RATE_LIMIT_MAX, 120),
+    metricsRateLimitWindowMs: intFromEnv(env.METRICS_RATE_LIMIT_WINDOW_MS, 60_000),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
   };
 }

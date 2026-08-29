@@ -17,6 +17,19 @@ export function buildOpenApiSpec(): Record<string, unknown> {
       version: PKG_VERSION,
       description: "Liquidity coordination network for Stellar anchors. \n\n**[BREAKING CHANGE]** All monetary values (amounts, balances, portions, totals, fees) are now strictly represented in stroops and serialized as strings in JSON to prevent IEEE-754 precision loss.",
     },
+    components: {
+      securitySchemes: {
+        // Sent as the `x-api-key` request header. The same scheme carries both
+        // the primary write key (`API_KEY`) and the dedicated read-only metrics
+        // key (`METRICS_API_KEY`); which credential is required depends on the
+        // operation.
+        ApiKeyAuth: {
+          type: "apiKey",
+          in: "header",
+          name: "x-api-key",
+        },
+      },
+    },
     paths: {
       "/health": {
         get: { summary: "Health check" },
@@ -201,7 +214,12 @@ export function buildOpenApiSpec(): Record<string, unknown> {
             "totalFeesCollected (sum of settlement fee). Both value totals are computed " +
             "from executed settlements only — pending settlements have merely reserved " +
             "liquidity and cancelled ones never moved value, so neither contributes. " +
-            "Each read also appends a timestamped snapshot to the rolling history.",
+            "Each read also appends a timestamped snapshot to the rolling history. " +
+            "Protected: when API_KEY or METRICS_API_KEY is configured, callers must " +
+            "send a matching x-api-key header (a read-only METRICS_API_KEY is accepted " +
+            "so a scraper never needs the write key); requests are also rate-limited. " +
+            "When no key is set the endpoint is open, matching the write-auth model.",
+          security: [{ ApiKeyAuth: [] }],
         },
       },
       "/api/v1/metrics/history": {
@@ -210,7 +228,10 @@ export function buildOpenApiSpec(): Record<string, unknown> {
           description:
             "Returns { snapshots: [...] }, where each snapshot carries the same fields as " +
             "GET /api/v1/metrics (including totalSettledAmount and totalFeesCollected) " +
-            "plus an ISO-8601 timestamp.",
+            "plus an ISO-8601 timestamp. Retention is bounded to the most recent 50 " +
+            "snapshots (older ones are evicted). Same authentication and rate limiting " +
+            "as GET /api/v1/metrics.",
+          security: [{ ApiKeyAuth: [] }],
         },
       },
     },

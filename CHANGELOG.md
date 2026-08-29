@@ -3,6 +3,20 @@ All notable changes to the AnchorNet API are documented here.
 
 [Unreleased]
 Added
+Security: the metrics endpoints (GET /api/v1/metrics and
+/api/v1/metrics/history) are now protected reads. When API_KEY or the new
+METRICS_API_KEY is configured they require a matching x-api-key header
+(401 otherwise); when neither is set they stay open, matching the existing
+write-auth model. METRICS_API_KEY is a read-only credential that unlocks
+metrics but not mutating routes, so a monitoring scraper needs no write
+key. Metrics reads are now rate-limited per client (METRICS_RATE_LIMIT_MAX,
+default 120/min) via a new opt-in limitReads flag on the rate limiter, so
+the history endpoint cannot be used as an unlimited load generator.
+Snapshot-history retention remains bounded to the most recent 50 entries,
+now pinned by a route-level test. src/openapi.ts declares an ApiKeyAuth
+security scheme and marks both metrics operations as protected. The
+read-limiting is scoped to the metrics mount; global read limiting and a
+shared multi-instance store remain owned by the separate rate-limiter issue.
 Metrics: GET /api/v1/metrics now reports totalSettledAmount (sum of
 settlement amount) and totalFeesCollected (sum of settlement fee),
 computed from executed settlements only — pending settlements have

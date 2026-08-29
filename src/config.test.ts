@@ -150,6 +150,35 @@ describe("loadConfig", () => {
     expect(config.rateLimitWindowMs).toBe(120000);
   });
 
+  it("leaves the metrics API key unset by default", () => {
+    expect(loadConfig({}).metricsApiKey).toBeUndefined();
+  });
+
+  it("reads a configured metrics API key", () => {
+    expect(loadConfig({ METRICS_API_KEY: "scraper" }).metricsApiKey).toBe(
+      "scraper",
+    );
+  });
+
+  it("treats a blank metrics API key as unset", () => {
+    expect(loadConfig({ METRICS_API_KEY: "   " }).metricsApiKey).toBeUndefined();
+  });
+
+  it("defaults the metrics read rate limit", () => {
+    const config = loadConfig({});
+    expect(config.metricsRateLimitMax).toBe(120);
+    expect(config.metricsRateLimitWindowMs).toBe(60_000);
+  });
+
+  it("reads the metrics read rate limit from the environment", () => {
+    const config = loadConfig({
+      METRICS_RATE_LIMIT_MAX: "10",
+      METRICS_RATE_LIMIT_WINDOW_MS: "5000",
+    });
+    expect(config.metricsRateLimitMax).toBe(10);
+    expect(config.metricsRateLimitWindowMs).toBe(5000);
+  });
+
   describe("TRUST_PROXY", () => {
     it('parses "true" to boolean true', () => {
       expect(loadConfig({ TRUST_PROXY: "true" }).trustProxy).toBe(true);

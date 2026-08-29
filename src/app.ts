@@ -25,6 +25,7 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
 import { requestId } from "./middleware/requestId";
 import { apiKeyAuth } from "./middleware/apiKeyAuth";
+import { metricsAuth } from "./middleware/metricsAuth";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { securityHeaders } from "./middleware/securityHeaders";
 import { idempotency } from "./middleware/idempotency";
@@ -116,8 +117,24 @@ export function createApp(): Express {
   app.use("/api/v1/quote", quoteRouter(quotes));
   app.use("/api/v1/anchors", anchorRouter(anchors, settlements));
   app.use("/api/v1/settlements", settlementRouter(settlements, audit.entries));
+  // Metrics expose aggregate operational data (participant counts, liquidity
+  // totals, settlement volume and fees over time). That is deliberately
+  // treated as protected rather than public: reads require authentication
+  // whenever a key is configured, and — unlike the global writes-only limiter
+  // — are rate-limited via `limitReads` so the unauthenticated-or-not history
+  // endpoint cannot be used as a cheap load generator. When no key is set the
+  // guard is a no-op, preserving open access for local/dev deployments.
   app.use(
     "/api/v1/metrics",
+    metricsAuth(config.apiKey, config.metricsApiKey),
+    rateLimiter(
+      {
+        max: config.metricsRateLimitMax,
+        windowMs: config.metricsRateLimitWindowMs,
+        limitReads: true,
+      },
+      config.apiKey ?? config.metricsApiKey,
+    ),
     metricsRouter({
       liquidity,
       anchors,

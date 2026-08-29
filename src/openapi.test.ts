@@ -52,6 +52,35 @@ describe("openapi spec", () => {
     expect(history.description).toContain("totalFeesCollected");
   });
 
+  it("declares the x-api-key security scheme and marks metrics as protected", () => {
+    const spec = buildOpenApiSpec() as {
+      components?: {
+        securitySchemes?: Record<
+          string,
+          { type?: string; in?: string; name?: string }
+        >;
+      };
+      paths: Record<string, { get: { security?: unknown[]; description?: string } }>;
+    };
+
+    const scheme = spec.components?.securitySchemes?.ApiKeyAuth;
+    expect(scheme).toMatchObject({
+      type: "apiKey",
+      in: "header",
+      name: "x-api-key",
+    });
+
+    expect(spec.paths["/api/v1/metrics"].get.security).toEqual([
+      { ApiKeyAuth: [] },
+    ]);
+    expect(spec.paths["/api/v1/metrics/history"].get.security).toEqual([
+      { ApiKeyAuth: [] },
+    ]);
+    expect(spec.paths["/api/v1/metrics/history"].get.description).toContain(
+      "50",
+    );
+  });
+
   it("documents the dryRun preflight parameter on POST /api/v1/anchors/bulk", () => {
     const spec = buildOpenApiSpec() as {
       paths: Record<
