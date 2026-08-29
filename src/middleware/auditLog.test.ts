@@ -39,7 +39,7 @@ describe("createAuditLog", () => {
     expect(audit.entries()).toHaveLength(0);
   });
 
-  it("evicts the oldest entry once over the configured limit", async () => {
+  it("silently evicts the oldest entry once over the configured limit but exposes the evicted count", async () => {
     const audit = createAuditLog(2);
     const app = makeApp(audit);
 
@@ -48,6 +48,7 @@ describe("createAuditLog", () => {
     await request(app).post("/mutate");
 
     expect(audit.entries()).toHaveLength(2);
+    expect(audit.evictedCount()).toBe(1);
   });
 });
 

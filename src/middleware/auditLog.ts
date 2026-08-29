@@ -1,10 +1,11 @@
 /**
- * In-memory audit log of mutating requests.
+ * In-memory convenience buffer of recent mutating requests.
  *
  * Records method/path/status/request-id/timestamp for every
  * POST/PUT/PATCH/DELETE request once its response finishes, in a bounded
  * rolling buffer, so operators can see recent write activity without an
- * external logging pipeline.
+ * external logging pipeline. This is an operator convenience buffer, not
+ * a durable audit trail. Oldest entries are evicted once the limit is reached.
  */
 
 import { NextFunction, Request, Response } from "express";
@@ -74,6 +75,7 @@ export function createAuditLog(
 ): {
   middleware: (req: Request, res: Response, next: NextFunction) => void;
   entries: () => AuditEntry[];
+  evictedCount: () => number;
 } {
   const history = new BoundedHistory<AuditEntry>(limit);
 
@@ -106,6 +108,7 @@ export function createAuditLog(
       next();
     },
     entries: () => history.all(),
+    evictedCount: () => history.evictedCount,
   };
 }
 

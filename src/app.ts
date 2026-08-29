@@ -96,7 +96,7 @@ export function createApp(): Express {
   });
 
   app.get("/api/v1/audit", (_req: Request, res: Response) => {
-    res.json({ entries: audit.entries() });
+    res.json({ entries: audit.entries(), evictedCount: audit.evictedCount() });
   });
 
   app.use("/api/v1/liquidity", liquidityRouter(liquidity));

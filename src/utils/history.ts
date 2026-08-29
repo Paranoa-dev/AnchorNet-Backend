@@ -7,6 +7,7 @@
  */
 export class BoundedHistory<T> {
   private readonly items: T[] = [];
+  public evictedCount: number = 0;
 
   constructor(private readonly limit: number) {
     if (!Number.isInteger(limit) || limit <= 0) {
@@ -21,6 +22,7 @@ export class BoundedHistory<T> {
     this.items.push(item);
     if (this.items.length > this.limit) {
       this.items.shift();
+      this.evictedCount++;
     }
   }
 

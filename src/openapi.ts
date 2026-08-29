@@ -47,8 +47,9 @@ export function buildOpenApiSpec(): Record<string, unknown> {
       },
       "/api/v1/audit": {
         get: {
-          summary:
-            "Recent mutating requests (method, path, status, request id, timestamp)",
+          summary: "Recent mutating requests (operator convenience buffer)",
+          description:
+            "Returns a bounded rolling buffer of recent mutating requests (method, path, status, request id, timestamp). This is an operator convenience buffer, not a durable audit trail. Once full, the oldest entries are evicted. The evictedCount indicates how many entries have been dropped since startup.",
         },
       },
       "/api/v1/liquidity": {
